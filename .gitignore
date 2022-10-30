@@ -1,3 +1,5 @@
-CMakeLists.txt
 cmake-build-debug
-trace
+Makefile
+.idea
+traceroute
+CMakeFiles

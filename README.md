@@ -3,10 +3,11 @@
 traceroute – a utility to show packet route to host
 
 ```shell
-./trace -d <destination ip> -h <max hops> -rt <response timeout>
+./traceroute -d <destination ip> -h <max hops> -rt <response timeout>
 ```
 
 ## Compilation
 
-1. Make sure you have `build-essentials` and `g++` installed
-2. Run `make`
+1. Make sure you have `build-essentials`, `g++`, and `cmake` installed
+2. Run `cmake .` to generate Makefile
+3. Run `make` to build

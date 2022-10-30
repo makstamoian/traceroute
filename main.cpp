@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <netinet/ip.h>
+#include <netdb.h>
 
 using namespace std;
 using namespace std::chrono;
@@ -28,7 +29,7 @@ void traceroute(char *ip, int max_hops, int response_timeout);
 
 uint16_t checksum(const void *data, size_t len);
 
-struct icmpHeader {
+struct icmp_header {
     uint8_t type;
     uint8_t code;
     uint16_t checksum;
@@ -83,13 +84,14 @@ int main(int argc, char **argv) {
             "'####:. ######:: ##:::: ##: ##::::::::. #######:: ##::::::::. ######::\n"
             "....:::......:::..:::::..::..::::::::::.......:::..::::::::::......:::";
     cout << endl << endl;
-    
+
     if (argc < 2) {
         help();
         return 0;
     }
 
-    char *ip;
+//    char *ip = (char *) malloc(sizeof(char) * 1024);
+    char *url;
     int max_hops = 30;
     int response_timeout = 1;
 
@@ -100,7 +102,7 @@ int main(int argc, char **argv) {
         }
 
         if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--destination") == 0) {
-            ip = argv[i + 1];
+            url = argv[i + 1];
             i += 1;
         }
 
@@ -115,7 +117,32 @@ int main(int argc, char **argv) {
         }
     }
 
+    struct hostent *he;
+    struct in_addr **addr_list;
+
+    he = gethostbyname(url);
+
+    if (he == nullptr) {
+        herror("gethostbyname");
+        return 0;
+    }
+
+    cout << "Official name: " << he->h_name << endl;
+    cout << "IP address: " << inet_ntoa(*(struct in_addr *) he->h_addr) << endl;
+    cout << "All addresses: ";
+
+    addr_list = (struct in_addr **) he->h_addr_list;
+    for (int i = 0; addr_list[i] != nullptr; i++) {
+        cout << "   " << inet_ntoa(*addr_list[i]);
+    }
+
+    cout << endl;
+
+    char ip[1024];
+    strcpy(ip, inet_ntoa(*(struct in_addr *) he->h_addr));
+
     signal(SIGINT, catch_ctrl_c);
+
     traceroute(ip, max_hops, response_timeout);
 
     return 0;
@@ -125,7 +152,6 @@ int sock;
 
 void traceroute(char *ip, int max_hops, int response_timeout) {
     cout << "Traceroute to " << "\033[1;35m" << ip << "\033[0m" << endl;
-
     cout << "Max hops: " << "\033[1;35m" << max_hops << "\033[0m" << endl << endl;
 
     struct sockaddr_in in_addr{};
@@ -141,23 +167,22 @@ void traceroute(char *ip, int max_hops, int response_timeout) {
         return;
     }
 
-    struct icmpHeader icmpPacket{};
+    struct icmp_header icmp_packet{};
 
     for (int i = 0; i < max_hops; i++) {
-
-        icmpPacket.type = 8;
-        icmpPacket.code = 0;
-        icmpPacket.checksum = 0;
-        icmpPacket.meta.echo.identifier = ppid;
-        icmpPacket.meta.echo.sequence = i;
-        icmpPacket.meta.echo.payload = 0b101101010110100101; // random binary data, doesnt matter
-        icmpPacket.checksum = checksum(&icmpPacket, sizeof(icmpPacket));
+        icmp_packet.type = 8;
+        icmp_packet.code = 0;
+        icmp_packet.checksum = 0;
+        icmp_packet.meta.echo.identifier = ppid;
+        icmp_packet.meta.echo.sequence = i;
+        icmp_packet.meta.echo.payload = 0b101101010110100101; // random binary data
+        icmp_packet.checksum = checksum(&icmp_packet, sizeof(icmp_packet));
 
         int ttl = i + 1;
 
         setsockopt(sock, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
 
-        long int send_flag = sendto(sock, &icmpPacket, sizeof(icmpPacket), 0, (struct sockaddr *) &in_addr,
+        auto send_flag = sendto(sock, &icmp_packet, sizeof(icmp_packet), 0, (struct sockaddr *) &in_addr,
                                     socklen_t(sizeof(in_addr)));
 
         if (send_flag < 0) {
@@ -165,9 +190,7 @@ void traceroute(char *ip, int max_hops, int response_timeout) {
             return;
         }
 
-        char buf[1024];
-
-        auto *ipResponseHeader = (struct iphdr *) buf;
+        struct iphdr ip_response_header{};
 
         struct timeval tv{};
         tv.tv_sec = response_timeout;
@@ -176,21 +199,19 @@ void traceroute(char *ip, int max_hops, int response_timeout) {
         setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
+        auto data_length_byte = recv(sock, &ip_response_header, sizeof(ip_response_header), 0);
 
-        int data_length_byte = recv(sock, ipResponseHeader, sizeof(buf), 0);
-
-        if(data_length_byte == -1) {
+        if (data_length_byte == -1) {
             cout << ttl << "\033[1;35m" << " * * *" << "\033[0m" << endl;
             continue;
         }
 
         struct sockaddr_in src_addr{};
-
-        src_addr.sin_addr.s_addr = ipResponseHeader->saddr;
+        src_addr.sin_addr.s_addr = ip_response_header.saddr;
 
         cout << ttl << " " << "\033[1;35m" << inet_ntoa(src_addr.sin_addr) << "\033[0m" << endl;
 
-        if(strcmp(inet_ntoa(src_addr.sin_addr), ip) == 0){
+        if (strcmp(inet_ntoa(src_addr.sin_addr), ip) == 0) {
             cout << endl << "\033[1;35m" << ttl << "\033[0m" << " hops between you and " << ip << endl;
             break;
         }
@@ -202,3 +223,4 @@ void catch_ctrl_c(int signal) {
     cout << endl << "\033[1;35m" << "Socket closed. Exiting..." << "\033[0m" << endl << endl;
     exit(signal);
 }
+#pragma clang diagnostic pop
