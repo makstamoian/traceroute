@@ -10,6 +10,9 @@
 #include <netinet/ip.h>
 #include <netdb.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wwritable-strings"
+
 using namespace std;
 using namespace std::chrono;
 
@@ -28,6 +31,38 @@ void catch_ctrl_c(int signal);
 void traceroute(char *ip, int max_hops, int response_timeout);
 
 uint16_t checksum(const void *data, size_t len);
+
+char *dns(char *url){
+    struct hostent *he;
+    struct in_addr **addr_list;
+
+    he = gethostbyname(url);
+
+    if (he == nullptr) {
+        herror("gethostbyname");
+
+        cout << "1. Check your Network Connection. " << endl
+        << "2. Check your DNS in /etc/resolv.conf - may be its unreachable" << endl
+        << "3. You can disable DNS using -dns disable" << endl;
+
+        return "0";
+    }
+
+    cout << "Official name: " << he->h_name << endl;
+    cout << "IP address: " << inet_ntoa(*(struct in_addr *) he->h_addr) << endl;
+    cout << "All addresses: ";
+
+    addr_list = (struct in_addr **) he->h_addr_list;
+    for (int i = 0; addr_list[i] != nullptr; i++) {
+        cout << "   " << inet_ntoa(*addr_list[i]);
+    }
+
+    cout << endl;
+
+    char ip[1024];
+    strcpy(ip, inet_ntoa(*(struct in_addr *) he->h_addr));
+    return ref(ip);
+}
 
 struct icmp_header {
     uint8_t type;
@@ -90,8 +125,8 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-//    char *ip = (char *) malloc(sizeof(char) * 1024);
-    char *url;
+    char *url, *ip;
+    char *dns_used = "enable";
     int max_hops = 30;
     int response_timeout = 1;
 
@@ -115,31 +150,21 @@ int main(int argc, char **argv) {
             response_timeout = atoi(argv[i + 1]);
             i += 1;
         }
+        if(strcmp(argv[i], "-dns") == 0 || strcmp(argv[i], "--dns") == 0){
+            dns_used = argv[i + 1];
+        }
     }
 
-    struct hostent *he;
-    struct in_addr **addr_list;
+    if(strcmp(dns_used, "enable") == 0){
+        ip = dns(url);
 
-    he = gethostbyname(url);
-
-    if (he == nullptr) {
-        herror("gethostbyname");
-        return 0;
+        if(strcmp(ip, "0") == 0){
+            cout << "Invalid IP, try again" << endl;
+            return 0;
+        }
+    } else {
+        ip = url;
     }
-
-    cout << "Official name: " << he->h_name << endl;
-    cout << "IP address: " << inet_ntoa(*(struct in_addr *) he->h_addr) << endl;
-    cout << "All addresses: ";
-
-    addr_list = (struct in_addr **) he->h_addr_list;
-    for (int i = 0; addr_list[i] != nullptr; i++) {
-        cout << "   " << inet_ntoa(*addr_list[i]);
-    }
-
-    cout << endl;
-
-    char ip[1024];
-    strcpy(ip, inet_ntoa(*(struct in_addr *) he->h_addr));
 
     signal(SIGINT, catch_ctrl_c);
 
@@ -183,7 +208,7 @@ void traceroute(char *ip, int max_hops, int response_timeout) {
         setsockopt(sock, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
 
         auto send_flag = sendto(sock, &icmp_packet, sizeof(icmp_packet), 0, (struct sockaddr *) &in_addr,
-                                    socklen_t(sizeof(in_addr)));
+                                socklen_t(sizeof(in_addr)));
 
         if (send_flag < 0) {
             perror("send error");
@@ -209,7 +234,7 @@ void traceroute(char *ip, int max_hops, int response_timeout) {
         struct sockaddr_in src_addr{};
         src_addr.sin_addr.s_addr = ip_response_header.saddr;
 
-        cout << ttl << " " << "\033[1;35m" << inet_ntoa(src_addr.sin_addr) << "\033[0m" << endl;
+        cout << ttl << " " << "\033[1;35m" <<  inet_ntoa(src_addr.sin_addr) << "\033[0m" << endl;
 
         if (strcmp(inet_ntoa(src_addr.sin_addr), ip) == 0) {
             cout << endl << "\033[1;35m" << ttl << "\033[0m" << " hops between you and " << ip << endl;
