@@ -12,5 +12,6 @@ traceroute – a utility to show packet route to host
 2. Run `cmake .` to generate Makefile
 3. Run `make` to build
 
-
+## Contribution
 🚀 Feel free to contribute by opening pull requsts or issues 🚀
+Adequate PR and commit names are highly appreciated
